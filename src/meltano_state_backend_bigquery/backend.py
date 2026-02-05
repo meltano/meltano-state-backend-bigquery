@@ -141,13 +141,11 @@ class BigQueryStateStoreManager(StateStoreManager):
 
     def _ensure_tables(self) -> None:
         """Ensure the state and lock tables exist."""
-        # Create state table
+        # Create state table (simple key-value store)
         state_table_id = f"{self.project}.{self.dataset}.{self.table_name}"
         state_schema = [
             bigquery.SchemaField("state_id", "STRING", mode="REQUIRED"),
-            bigquery.SchemaField("partial_state", "JSON", mode="NULLABLE"),
-            bigquery.SchemaField("completed_state", "JSON", mode="NULLABLE"),
-            bigquery.SchemaField("updated_at", "TIMESTAMP", mode="NULLABLE"),
+            bigquery.SchemaField("value", "JSON", mode="NULLABLE"),
         ]
 
         try:
@@ -160,8 +158,8 @@ class BigQueryStateStoreManager(StateStoreManager):
         lock_table_id = f"{self.project}.{self.dataset}.{self.lock_table_name}"
         lock_schema = [
             bigquery.SchemaField("state_id", "STRING", mode="REQUIRED"),
-            bigquery.SchemaField("locked_at", "TIMESTAMP", mode="NULLABLE"),
-            bigquery.SchemaField("lock_id", "STRING", mode="NULLABLE"),
+            bigquery.SchemaField("lock_id", "STRING", mode="REQUIRED"),
+            bigquery.SchemaField("locked_at", "TIMESTAMP", mode="REQUIRED"),
         ]
 
         try:
@@ -177,38 +175,30 @@ class BigQueryStateStoreManager(StateStoreManager):
             state: the state to set.
 
         """
-        partial_json = json.dumps(state.partial_state) if state.partial_state else None
-        completed_json = json.dumps(state.completed_state) if state.completed_state else None
+        value = json.dumps(
+            {
+                "partial": state.partial_state,
+                "completed": state.completed_state,
+            }
+        )
 
         query = f"""
             MERGE `{self.project}.{self.dataset}.{self.table_name}` AS target
-            USING (
-                SELECT
-                    @state_id AS state_id,
-                    PARSE_JSON(@partial_state) AS partial_state,
-                    PARSE_JSON(@completed_state) AS completed_state
-            ) AS source
+            USING (SELECT @state_id AS state_id, PARSE_JSON(@value) AS value) AS source
             ON target.state_id = source.state_id
-            WHEN MATCHED THEN
-                UPDATE SET
-                    partial_state = source.partial_state,
-                    completed_state = source.completed_state,
-                    updated_at = CURRENT_TIMESTAMP()
-            WHEN NOT MATCHED THEN
-                INSERT (state_id, partial_state, completed_state, updated_at)
-                VALUES (source.state_id, source.partial_state, source.completed_state, CURRENT_TIMESTAMP())
-        """  # noqa: E501, S608
+            WHEN MATCHED THEN UPDATE SET value = source.value
+            WHEN NOT MATCHED THEN INSERT (state_id, value) VALUES (source.state_id, source.value)
+        """  # noqa: S608
 
         job_config = bigquery.QueryJobConfig(
             query_parameters=[
                 bigquery.ScalarQueryParameter("state_id", "STRING", state.state_id),
-                bigquery.ScalarQueryParameter("partial_state", "STRING", partial_json),
-                bigquery.ScalarQueryParameter("completed_state", "STRING", completed_json),
+                bigquery.ScalarQueryParameter("value", "STRING", value),
             ],
         )
 
         query_job = self.client.query(query, job_config=job_config)
-        query_job.result()  # Wait for the query to complete
+        query_job.result()
 
     def get(self, state_id: str) -> MeltanoState | None:
         """Get the job state for the given state_id.
@@ -221,7 +211,7 @@ class BigQueryStateStoreManager(StateStoreManager):
 
         """
         query = f"""
-            SELECT partial_state, completed_state
+            SELECT value
             FROM `{self.project}.{self.dataset}.{self.table_name}`
             WHERE state_id = @state_id
         """  # noqa: S608
@@ -239,16 +229,12 @@ class BigQueryStateStoreManager(StateStoreManager):
             return None
 
         row = results[0]
-
-        # BigQuery returns None for NULL JSON columns
-        # but MeltanoState expects empty dicts
-        partial_state = row.partial_state if row.partial_state is not None else {}
-        completed_state = row.completed_state if row.completed_state is not None else {}
+        value = row.value if row.value is not None else {}
 
         return MeltanoState(
             state_id=state_id,
-            partial_state=partial_state,
-            completed_state=completed_state,
+            partial_state=value.get("partial") or {},
+            completed_state=value.get("completed") or {},
         )
 
     def delete(self, state_id: str) -> None:
