@@ -151,10 +151,12 @@ def test_get_state(
     """Test getting state."""
     manager, mock_client = subject
 
-    # Mock query result
+    # Mock query result - value column contains both partial and completed
     mock_row = mock.Mock()
-    mock_row.partial_state = {"singer_state": {"partial": 1}}
-    mock_row.completed_state = {"singer_state": {"complete": 1}}
+    mock_row.value = {
+        "partial": {"singer_state": {"partial": 1}},
+        "completed": {"singer_state": {"complete": 1}},
+    }
 
     mock_query_job = mock.Mock()
     mock_query_job.result.return_value = [mock_row]
@@ -178,13 +180,15 @@ def test_get_state(
 def test_get_state_with_null_values(
     subject: tuple[BigQueryStateStoreManager, mock.Mock],
 ) -> None:
-    """Test getting state with NULL JSON columns."""
+    """Test getting state with NULL partial_state in value."""
     manager, mock_client = subject
 
-    # Mock query result with None values
+    # Mock query result with None for partial inside value
     mock_row = mock.Mock()
-    mock_row.partial_state = None
-    mock_row.completed_state = {"singer_state": {"complete": 1}}
+    mock_row.value = {
+        "partial": None,
+        "completed": {"singer_state": {"complete": 1}},
+    }
 
     mock_query_job = mock.Mock()
     mock_query_job.result.return_value = [mock_row]
@@ -221,13 +225,12 @@ def test_get_state_not_found(
 def test_get_state_with_none_values(
     subject: tuple[BigQueryStateStoreManager, mock.Mock],
 ) -> None:
-    """Test getting state with None values (NULL in BigQuery)."""
+    """Test getting state with NULL value column in BigQuery."""
     manager, mock_client = subject
 
-    # Mock query result with None values
+    # Mock query result with None value (entire JSON column is NULL)
     mock_row = mock.Mock()
-    mock_row.partial_state = None
-    mock_row.completed_state = None
+    mock_row.value = None
 
     mock_query_job = mock.Mock()
     mock_query_job.result.return_value = [mock_row]
