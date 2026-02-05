@@ -1,9 +1,12 @@
 # `meltano-state-backend-bigquery`
 
-[![PyPI version](https://img.shields.io/pypi/v/meltano-state-backend-bigquery.svg?logo=pypi&logoColor=FFE873&color=blue)](https://pypi.org/project/meltano-state-backend-bigquery)
-[![Python versions](https://img.shields.io/pypi/pyversions/meltano-state-backend-bigquery.svg?logo=python&logoColor=FFE873)](https://pypi.org/project/meltano-state-backend-bigquery)
+<!-- Display these if and when we publish to PyPI. -->
 
-This is a [Meltano][meltano] extension that provides a [BigQuery][bigquery] [state backend][state-backend].
+<!--
+[![PyPI version](https://img.shields.io/pypi/v/meltano-state-backend-bigquery.svg?logo=pypi&logoColor=FFE873&color=blue)](https://pypi.org/project/meltano-state-backend-bigquery)
+[![Python versions](https://img.shields.io/pypi/pyversions/meltano-state-backend-bigquery.svg?logo=python&logoColor=FFE873)](https://pypi.org/project/meltano-state-backend-bigquery) -->
+
+This is a [Meltano] extension that provides a [BigQuery] [state backend][state-backend].
 
 ## Installation
 
@@ -14,14 +17,14 @@ This package needs to be installed in the same Python environment as Meltano.
 #### With [uv]
 
 ```bash
-uv tool install --with meltano-state-backend-bigquery meltano
+uv tool install --with git+https://github.com/meltano/meltano-state-backend-bigquery.git meltano
 ```
 
 #### With [pipx]
 
 ```bash
 pipx install meltano
-pipx inject meltano meltano-state-backend-bigquery
+pipx inject meltano git+https://github.com/meltano/meltano-state-backend-bigquery.git
 ```
 
 ## Configuration
@@ -29,12 +32,14 @@ pipx inject meltano meltano-state-backend-bigquery
 To store state in BigQuery, set the `state_backend.uri` setting to `bigquery://<project>/<dataset>`.
 
 State will be stored in two tables that Meltano will create automatically:
+
 - `meltano_state` - Stores the actual state data
 - `meltano_state_locks` - Manages concurrency locks
 
 To authenticate to BigQuery, you can use either:
+
 1. Application Default Credentials (recommended for GCP environments)
-2. Service account JSON key file
+1. Service account JSON key file
 
 ### Using Application Default Credentials
 
@@ -69,6 +74,7 @@ state_backend:
 #### Security Considerations
 
 When storing credentials:
+
 - Use environment variables for sensitive values in production
 - Consider using Application Default Credentials when running on GCP
 - Ensure the service account has the following BigQuery permissions:
@@ -82,7 +88,7 @@ Example using environment variables:
 
 ```bash
 export MELTANO_STATE_BACKEND_BIGQUERY_CREDENTIALS_PATH='/path/to/key.json'
-meltano config meltano set state_backend.uri 'bigquery://my-project/my-dataset'
+meltano config set meltano state_backend.uri 'bigquery://my-project/my-dataset'
 ```
 
 ## Development
@@ -103,12 +109,15 @@ uvx --with tox-uv tox run-parallel
 
 ### Bump the version
 
+Using the [GitHub CLI][gh]:
+
 ```bash
-uv version --bump <type>
+gh release create v<new-version>
 ```
 
-[meltano]: https://meltano.com
 [bigquery]: https://cloud.google.com/bigquery
-[state-backend]: https://docs.meltano.com/concepts/state_backends
+[gh]: https://cli.github.com/
+[meltano]: https://meltano.com
 [pipx]: https://github.com/pypa/pipx
+[state-backend]: https://docs.meltano.com/concepts/state_backends
 [uv]: https://docs.astral.sh/uv
