@@ -3,14 +3,14 @@
 from __future__ import annotations
 
 import json
-import typing as t
 from contextlib import contextmanager
 from functools import cached_property
 from time import sleep
+from typing import TYPE_CHECKING, Any
 from urllib.parse import urlparse
 
 from google.cloud import bigquery
-from google.cloud.exceptions import Conflict, NotFound
+from google.cloud.exceptions import NotFound
 from meltano.core.error import MeltanoError
 from meltano.core.setting_definition import SettingDefinition, SettingKind
 from meltano.core.state_store.base import (
@@ -20,7 +20,7 @@ from meltano.core.state_store.base import (
     StateStoreManager,
 )
 
-if t.TYPE_CHECKING:
+if TYPE_CHECKING:
     from collections.abc import Generator, Iterable
 
 
@@ -32,7 +32,7 @@ BIGQUERY_PROJECT = SettingDefinition(
     name="state_backend.bigquery.project",
     label="BigQuery Project",
     description="BigQuery project ID",
-    kind=SettingKind.STRING,
+    kind=SettingKind.STRING,  # ty: ignore[invalid-argument-type]
     env_specific=True,
 )
 
@@ -40,7 +40,7 @@ BIGQUERY_DATASET = SettingDefinition(
     name="state_backend.bigquery.dataset",
     label="BigQuery Dataset",
     description="BigQuery dataset name",
-    kind=SettingKind.STRING,
+    kind=SettingKind.STRING,  # ty: ignore[invalid-argument-type]
     env_specific=True,
 )
 
@@ -48,7 +48,7 @@ BIGQUERY_LOCATION = SettingDefinition(
     name="state_backend.bigquery.location",
     label="BigQuery Location",
     description="BigQuery dataset location (e.g., US, EU)",
-    kind=SettingKind.STRING,
+    kind=SettingKind.STRING,  # ty: ignore[invalid-argument-type]
     default="US",
     env_specific=True,
 )
@@ -57,7 +57,7 @@ BIGQUERY_CREDENTIALS_PATH = SettingDefinition(
     name="state_backend.bigquery.credentials_path",
     label="BigQuery Credentials Path",
     description="Path to service account JSON key file",
-    kind=SettingKind.STRING,
+    kind=SettingKind.STRING,  # ty: ignore[invalid-argument-type]
     sensitive=True,
     env_specific=True,
 )
@@ -78,7 +78,7 @@ class BigQueryStateStoreManager(StateStoreManager):
         dataset: str | None = None,
         location: str | None = None,
         credentials_path: str | None = None,
-        **kwargs: t.Any,
+        **kwargs: Any,
     ) -> None:
         """Initialize the BigQueryStateStoreManager.
 
@@ -123,7 +123,7 @@ class BigQueryStateStoreManager(StateStoreManager):
 
         """
         if self.credentials_path:
-            return bigquery.Client.from_service_account_json(
+            return bigquery.Client.from_service_account_json(  # type: ignore[no-any-return,no-untyped-call]
                 self.credentials_path,
                 project=self.project,
             )
@@ -197,7 +197,7 @@ class BigQueryStateStoreManager(StateStoreManager):
             WHEN NOT MATCHED THEN
                 INSERT (state_id, partial_state, completed_state, updated_at)
                 VALUES (source.state_id, source.partial_state, source.completed_state, CURRENT_TIMESTAMP())
-        """
+        """  # noqa: E501, S608
 
         job_config = bigquery.QueryJobConfig(
             query_parameters=[
@@ -224,7 +224,7 @@ class BigQueryStateStoreManager(StateStoreManager):
             SELECT partial_state, completed_state
             FROM `{self.project}.{self.dataset}.{self.table_name}`
             WHERE state_id = @state_id
-        """
+        """  # noqa: S608
 
         job_config = bigquery.QueryJobConfig(
             query_parameters=[
@@ -261,7 +261,7 @@ class BigQueryStateStoreManager(StateStoreManager):
         query = f"""
             DELETE FROM `{self.project}.{self.dataset}.{self.table_name}`
             WHERE state_id = @state_id
-        """
+        """  # noqa: S608
 
         job_config = bigquery.QueryJobConfig(
             query_parameters=[
@@ -283,15 +283,15 @@ class BigQueryStateStoreManager(StateStoreManager):
         count_query = f"""
             SELECT COUNT(*) as count
             FROM `{self.project}.{self.dataset}.{self.table_name}`
-        """
+        """  # noqa: S608
         query_job = self.client.query(count_query)
-        count = list(query_job.result())[0].count
+        count = next(iter(query_job.result())).count
 
         # Delete all rows
         delete_query = f"""
             DELETE FROM `{self.project}.{self.dataset}.{self.table_name}`
             WHERE TRUE
-        """
+        """  # noqa: S608
         query_job = self.client.query(delete_query)
         query_job.result()  # Wait for the query to complete
 
@@ -314,7 +314,7 @@ class BigQueryStateStoreManager(StateStoreManager):
                 SELECT state_id
                 FROM `{self.project}.{self.dataset}.{self.table_name}`
                 WHERE state_id LIKE @pattern
-            """
+            """  # noqa: S608
             job_config = bigquery.QueryJobConfig(
                 query_parameters=[
                     bigquery.ScalarQueryParameter("pattern", "STRING", sql_pattern),
@@ -324,7 +324,7 @@ class BigQueryStateStoreManager(StateStoreManager):
             query = f"""
                 SELECT state_id
                 FROM `{self.project}.{self.dataset}.{self.table_name}`
-            """
+            """  # noqa: S608
             job_config = None
 
         query_job = self.client.query(query, job_config=job_config)
@@ -358,54 +358,49 @@ class BigQueryStateStoreManager(StateStoreManager):
         seconds_waited = 0
 
         while seconds_waited < max_seconds:  # pragma: no branch
-            try:
-                # Try to acquire lock by inserting a row
-                # BigQuery doesn't have unique constraints, so we use a workaround:
-                # First check if lock exists, then insert
-                check_query = f"""
-                    SELECT COUNT(*) as count
-                    FROM `{self.project}.{self.dataset}.{self.lock_table_name}`
-                    WHERE state_id = @state_id
-                """
-                job_config = bigquery.QueryJobConfig(
-                    query_parameters=[
-                        bigquery.ScalarQueryParameter("state_id", "STRING", state_id),
-                    ],
-                )
-                query_job = self.client.query(check_query, job_config=job_config)
-                lock_count = list(query_job.result())[0].count
-
-                if lock_count > 0:
-                    # Lock already exists
-                    seconds_waited += retry_seconds
-                    if seconds_waited >= max_seconds:
-                        msg = f"Could not acquire lock for state_id: {state_id}"
-                        raise StateIDLockedError(msg)
-                    sleep(retry_seconds)
-                    continue
-
-                # Try to insert lock
-                insert_query = f"""
-                    INSERT INTO `{self.project}.{self.dataset}.{self.lock_table_name}`
-                    (state_id, locked_at, lock_id)
+            # MERGE will only insert if no row exists for this state_id
+            merge_query = f"""
+                MERGE `{self.project}.{self.dataset}.{self.lock_table_name}` AS target
+                USING (SELECT @state_id AS state_id) AS source
+                ON target.state_id = source.state_id
+                WHEN NOT MATCHED THEN
+                    INSERT (state_id, locked_at, lock_id)
                     VALUES (@state_id, CURRENT_TIMESTAMP(), @lock_id)
-                """
-                job_config = bigquery.QueryJobConfig(
-                    query_parameters=[
-                        bigquery.ScalarQueryParameter("state_id", "STRING", state_id),
-                        bigquery.ScalarQueryParameter("lock_id", "STRING", lock_id),
-                    ],
-                )
-                query_job = self.client.query(insert_query, job_config=job_config)
-                query_job.result()  # Wait for the query to complete
+            """  # noqa: S608
+
+            job_config = bigquery.QueryJobConfig(
+                query_parameters=[
+                    bigquery.ScalarQueryParameter("state_id", "STRING", state_id),
+                    bigquery.ScalarQueryParameter("lock_id", "STRING", lock_id),
+                ],
+            )
+            query_job = self.client.query(merge_query, job_config=job_config)
+            query_job.result()
+
+            # Check if we own the lock (MERGE doesn't tell us if insert happened)
+            check_query = f"""
+                SELECT lock_id
+                FROM `{self.project}.{self.dataset}.{self.lock_table_name}`
+                WHERE state_id = @state_id
+            """  # noqa: S608
+            job_config = bigquery.QueryJobConfig(
+                query_parameters=[
+                    bigquery.ScalarQueryParameter("state_id", "STRING", state_id),
+                ],
+            )
+            query_job = self.client.query(check_query, job_config=job_config)
+            result = next(iter(query_job.result()), None)
+
+            if result and result.lock_id == lock_id:
+                # We got the lock
                 break
-            except Conflict:
-                # Race condition - another process acquired the lock
-                seconds_waited += retry_seconds
-                if seconds_waited >= max_seconds:
-                    msg = f"Could not acquire lock for state_id: {state_id}"
-                    raise StateIDLockedError(msg)
-                sleep(retry_seconds)
+
+            # Someone else has the lock
+            seconds_waited += retry_seconds
+            if seconds_waited >= max_seconds:
+                msg = f"Could not acquire lock for state_id: {state_id}"
+                raise StateIDLockedError(msg)
+            sleep(retry_seconds)
 
         try:
             yield
@@ -414,7 +409,7 @@ class BigQueryStateStoreManager(StateStoreManager):
             delete_query = f"""
                 DELETE FROM `{self.project}.{self.dataset}.{self.lock_table_name}`
                 WHERE state_id = @state_id AND lock_id = @lock_id
-            """
+            """  # noqa: S608
             job_config = bigquery.QueryJobConfig(
                 query_parameters=[
                     bigquery.ScalarQueryParameter("state_id", "STRING", state_id),
@@ -428,6 +423,6 @@ class BigQueryStateStoreManager(StateStoreManager):
             cleanup_query = f"""
                 DELETE FROM `{self.project}.{self.dataset}.{self.lock_table_name}`
                 WHERE locked_at < TIMESTAMP_SUB(CURRENT_TIMESTAMP(), INTERVAL 5 MINUTE)
-            """
+            """  # noqa: S608
             query_job = self.client.query(cleanup_query)
             query_job.result()  # Wait for the query to complete

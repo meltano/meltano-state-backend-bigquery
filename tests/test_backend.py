@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 import shutil
 from decimal import Decimal
 from typing import TYPE_CHECKING
@@ -19,6 +18,8 @@ from meltano_state_backend_bigquery.backend import BigQueryStateStoreManager
 if TYPE_CHECKING:
     from collections.abc import Generator
     from pathlib import Path
+
+    from google.cloud import bigquery
 
 
 @pytest.fixture
@@ -358,13 +359,15 @@ def test_acquire_lock(
     """Test acquiring and releasing lock."""
     manager, mock_client = subject
 
-    # Mock query results
-    mock_check_row = mock.Mock(count=0)  # No lock exists
+    # Mock query results for new MERGE approach
+    mock_merge_job = mock.Mock()
+    mock_merge_job.result.return_value = []
+
+    # Mock the ownership check - returns our lock_id
+    mock_check_row = mock.Mock()
+    mock_check_row.lock_id = mock.ANY  # Will match the generated UUID
     mock_check_job = mock.Mock()
     mock_check_job.result.return_value = [mock_check_row]
-
-    mock_insert_job = mock.Mock()
-    mock_insert_job.result.return_value = []
 
     mock_delete_job = mock.Mock()
     mock_delete_job.result.return_value = []
@@ -372,18 +375,30 @@ def test_acquire_lock(
     mock_cleanup_job = mock.Mock()
     mock_cleanup_job.result.return_value = []
 
-    mock_client.query.side_effect = [
-        mock_check_job,  # Check if lock exists
-        mock_insert_job,  # Insert lock
-        mock_delete_job,  # Delete lock
-        mock_cleanup_job,  # Cleanup old locks
-    ]
+    # Capture the lock_id from the MERGE query to return it in the check
+    def query_side_effect(
+        query: str,
+        job_config: bigquery.QueryJobConfig | None = None,
+    ) -> mock.Mock:
+        if "MERGE" in query and job_config:  # pragma: no branch
+            # Extract the lock_id from the query parameters
+            for param in job_config.query_parameters:
+                if param.name == "lock_id":
+                    mock_check_row.lock_id = param.value
+            return mock_merge_job
+        if "SELECT lock_id" in query:
+            return mock_check_job
+        if "DELETE" in query and "lock_id = @lock_id" in query:
+            return mock_delete_job
+        return mock_cleanup_job
+
+    mock_client.query.side_effect = query_side_effect
 
     # Test successful lock acquisition
     with manager.acquire_lock("test_job", retry_seconds=0):
         pass
 
-    # Verify queries were called
+    # Verify queries were called: MERGE, SELECT, DELETE, cleanup DELETE
     assert mock_client.query.call_count == 4
 
 
@@ -393,17 +408,21 @@ def test_acquire_lock_retry(
     """Test lock retry mechanism."""
     manager, mock_client = subject
 
-    # Mock query results
-    mock_check_row_locked = mock.Mock(count=1)  # Lock exists
-    mock_check_job_locked = mock.Mock()
-    mock_check_job_locked.result.return_value = [mock_check_row_locked]
+    # Track call count to simulate retry behavior
+    call_count = 0
+    our_lock_id = None
 
-    mock_check_row_unlocked = mock.Mock(count=0)  # No lock exists
-    mock_check_job_unlocked = mock.Mock()
-    mock_check_job_unlocked.result.return_value = [mock_check_row_unlocked]
+    mock_merge_job = mock.Mock()
+    mock_merge_job.result.return_value = []
 
-    mock_insert_job = mock.Mock()
-    mock_insert_job.result.return_value = []
+    # First check returns someone else's lock_id, second returns ours
+    mock_check_row_other = mock.Mock(lock_id="other-process-lock")
+    mock_check_job_other = mock.Mock()
+    mock_check_job_other.result.return_value = [mock_check_row_other]
+
+    mock_check_row_ours = mock.Mock()
+    mock_check_job_ours = mock.Mock()
+    mock_check_job_ours.result.return_value = [mock_check_row_ours]
 
     mock_delete_job = mock.Mock()
     mock_delete_job.result.return_value = []
@@ -411,20 +430,37 @@ def test_acquire_lock_retry(
     mock_cleanup_job = mock.Mock()
     mock_cleanup_job.result.return_value = []
 
-    mock_client.query.side_effect = [
-        mock_check_job_locked,  # First check - lock exists
-        mock_check_job_unlocked,  # Second check - no lock
-        mock_insert_job,  # Insert lock
-        mock_delete_job,  # Delete lock
-        mock_cleanup_job,  # Cleanup old locks
-    ]
+    def query_side_effect(
+        query: str,
+        job_config: bigquery.QueryJobConfig | None = None,
+    ) -> mock.Mock:
+        nonlocal call_count, our_lock_id
+        call_count += 1
+
+        if "MERGE" in query and job_config:  # pragma: no branch
+            # Capture our lock_id from the query parameters
+            for param in job_config.query_parameters:
+                if param.name == "lock_id":
+                    our_lock_id = param.value
+                    mock_check_row_ours.lock_id = param.value
+            return mock_merge_job
+        if "SELECT lock_id" in query:
+            # First check returns other's lock, second returns ours
+            if call_count <= 2:
+                return mock_check_job_other
+            return mock_check_job_ours
+        if "DELETE" in query and "lock_id = @lock_id" in query:
+            return mock_delete_job
+        return mock_cleanup_job
+
+    mock_client.query.side_effect = query_side_effect
 
     # Test lock retry
-    with manager.acquire_lock("test_job", retry_seconds=0.01):
+    with manager.acquire_lock("test_job", retry_seconds=0.01):  # type: ignore[arg-type]
         pass
 
-    # Verify it retried
-    assert mock_client.query.call_count == 5
+    # Verify it retried: MERGE, SELECT (other's), MERGE, SELECT (ours), DELETE, cleanup
+    assert mock_client.query.call_count == 6
 
 
 def test_missing_project_validation() -> None:
@@ -457,12 +493,25 @@ def test_acquire_lock_max_retries_exceeded(
     """Test lock acquisition with max retries exceeded."""
     manager, mock_client = subject
 
-    # Mock query results - lock always exists
-    mock_check_row = mock.Mock(count=1)
+    # Mock query results - MERGE succeeds but someone else always owns the lock
+    mock_merge_job = mock.Mock()
+    mock_merge_job.result.return_value = []
+
+    mock_check_row = mock.Mock(lock_id="other-process-lock")
     mock_check_job = mock.Mock()
     mock_check_job.result.return_value = [mock_check_row]
 
-    mock_client.query.return_value = mock_check_job
+    def query_side_effect(
+        query: str,
+        job_config: bigquery.QueryJobConfig | None = None,  # noqa: ARG001
+    ) -> mock.Mock:
+        if "MERGE" in query:
+            return mock_merge_job
+        if "SELECT lock_id" in query:
+            return mock_check_job
+        return mock.Mock(result=mock.Mock(return_value=[]))  # pragma: no cover
+
+    mock_client.query.side_effect = query_side_effect
 
     retry_seconds = Decimal("0.01")
 
@@ -473,11 +522,12 @@ def test_acquire_lock_max_retries_exceeded(
             StateIDLockedError,
             match="Could not acquire lock for state_id: test_job",
         ),
+        manager.acquire_lock("test_job", retry_seconds=retry_seconds),  # type: ignore[arg-type]
     ):
-        with manager.acquire_lock("test_job", retry_seconds=retry_seconds):  # type: ignore[arg-type]
-            pass  # pragma: no cover
+        pass  # pragma: no cover
 
-    assert mock_sleep.call_count == int(30 / retry_seconds)
+    # Each retry does MERGE + SELECT, so sleep count is (30 / 0.01) - 1 = 2999
+    assert mock_sleep.call_count == int(30 / retry_seconds) - 1
 
 
 def test_client_with_credentials_path() -> None:
@@ -509,3 +559,148 @@ def test_client_with_credentials_path() -> None:
             "/path/to/credentials.json",
             project="testproject",
         )
+
+
+def test_client_without_credentials_path() -> None:
+    """Test client creation without credentials path (uses default credentials)."""
+    with (
+        mock.patch("google.cloud.bigquery.Client") as mock_client_class,
+        mock.patch(
+            "meltano_state_backend_bigquery.backend.BigQueryStateStoreManager._ensure_dataset",
+        ),
+        mock.patch(
+            "meltano_state_backend_bigquery.backend.BigQueryStateStoreManager._ensure_tables",
+        ),
+    ):
+        mock_client = mock.Mock()
+        mock_client_class.return_value = mock_client
+
+        manager = BigQueryStateStoreManager(
+            uri="bigquery://testproject/testdataset",
+            project="testproject",
+            dataset="testdataset",
+            # No credentials_path
+        )
+
+        # Access the client property to trigger creation
+        _ = manager.client
+
+        # Verify default client was used (not from_service_account_json)
+        mock_client_class.assert_called_once_with(project="testproject")
+
+
+def test_ensure_dataset_exists() -> None:
+    """Test _ensure_dataset when dataset already exists."""
+    with (
+        mock.patch("google.cloud.bigquery.Client") as mock_client_class,
+        mock.patch(
+            "meltano_state_backend_bigquery.backend.BigQueryStateStoreManager._ensure_tables",
+        ),
+    ):
+        mock_client = mock.Mock()
+        mock_client_class.return_value = mock_client
+        # Dataset exists - get_dataset succeeds
+        mock_client.get_dataset.return_value = mock.Mock()
+
+        manager = BigQueryStateStoreManager(
+            uri="bigquery://testproject/testdataset",
+            project="testproject",
+            dataset="testdataset",
+        )
+
+        # Verify get_dataset was called but create_dataset was not
+        mock_client.get_dataset.assert_called_once_with("testproject.testdataset")
+        mock_client.create_dataset.assert_not_called()
+        assert manager.dataset == "testdataset"
+
+
+def test_ensure_dataset_creates_when_not_found() -> None:
+    """Test _ensure_dataset creates dataset when it doesn't exist."""
+    from google.cloud.exceptions import NotFound
+
+    with (
+        mock.patch("google.cloud.bigquery.Client") as mock_client_class,
+        mock.patch("google.cloud.bigquery.Dataset") as mock_dataset_class,
+        mock.patch(
+            "meltano_state_backend_bigquery.backend.BigQueryStateStoreManager._ensure_tables",
+        ),
+    ):
+        mock_client = mock.Mock()
+        mock_client_class.return_value = mock_client
+        # Dataset doesn't exist - get_dataset raises NotFound
+        mock_client.get_dataset.side_effect = NotFound("Dataset not found")  # type: ignore[no-untyped-call]
+
+        mock_dataset = mock.Mock()
+        mock_dataset_class.return_value = mock_dataset
+
+        manager = BigQueryStateStoreManager(
+            uri="bigquery://testproject/testdataset",
+            project="testproject",
+            dataset="testdataset",
+            location="EU",
+        )
+
+        # Verify dataset was created
+        mock_dataset_class.assert_called_once_with("testproject.testdataset")
+        assert mock_dataset.location == "EU"
+        mock_client.create_dataset.assert_called_once_with(mock_dataset)
+        assert manager.dataset == "testdataset"
+
+
+def test_ensure_tables_exist() -> None:
+    """Test _ensure_tables when tables already exist."""
+    with (
+        mock.patch("google.cloud.bigquery.Client") as mock_client_class,
+        mock.patch(
+            "meltano_state_backend_bigquery.backend.BigQueryStateStoreManager._ensure_dataset",
+        ),
+    ):
+        mock_client = mock.Mock()
+        mock_client_class.return_value = mock_client
+        # Tables exist - get_table succeeds
+        mock_client.get_table.return_value = mock.Mock()
+
+        manager = BigQueryStateStoreManager(
+            uri="bigquery://testproject/testdataset",
+            project="testproject",
+            dataset="testdataset",
+        )
+
+        # Verify get_table was called for both tables but create_table was not
+        assert mock_client.get_table.call_count == 2
+        mock_client.get_table.assert_any_call("testproject.testdataset.meltano_state")
+        mock_client.get_table.assert_any_call("testproject.testdataset.meltano_state_locks")
+        mock_client.create_table.assert_not_called()
+        assert manager.table_name == "meltano_state"
+
+
+def test_ensure_tables_creates_when_not_found() -> None:
+    """Test _ensure_tables creates tables when they don't exist."""
+    from google.cloud.exceptions import NotFound
+
+    with (
+        mock.patch("google.cloud.bigquery.Client") as mock_client_class,
+        mock.patch("google.cloud.bigquery.Table") as mock_table_class,
+        mock.patch("google.cloud.bigquery.SchemaField"),
+        mock.patch(
+            "meltano_state_backend_bigquery.backend.BigQueryStateStoreManager._ensure_dataset",
+        ),
+    ):
+        mock_client = mock.Mock()
+        mock_client_class.return_value = mock_client
+        # Tables don't exist - get_table raises NotFound
+        mock_client.get_table.side_effect = NotFound("Table not found")  # type: ignore[no-untyped-call]
+
+        mock_table = mock.Mock()
+        mock_table_class.return_value = mock_table
+
+        manager = BigQueryStateStoreManager(
+            uri="bigquery://testproject/testdataset",
+            project="testproject",
+            dataset="testdataset",
+        )
+
+        # Verify tables were created
+        assert mock_table_class.call_count == 2
+        assert mock_client.create_table.call_count == 2
+        assert manager.table_name == "meltano_state"
