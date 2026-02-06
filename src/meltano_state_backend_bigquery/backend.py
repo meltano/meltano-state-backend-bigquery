@@ -49,7 +49,7 @@ BIGQUERY_LOCATION = SettingDefinition(
     label="BigQuery Location",
     description="BigQuery dataset location (e.g., US, EU)",
     kind=SettingKind.STRING,  # ty: ignore[invalid-argument-type]
-    default="US",
+    value="US",
     env_specific=True,
 )
 
