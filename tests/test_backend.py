@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import base64
+import json
 import shutil
 from decimal import Decimal
 from typing import TYPE_CHECKING
@@ -533,6 +535,51 @@ def test_acquire_lock_max_retries_exceeded(
     assert mock_sleep.call_count == int(30 / retry_seconds) - 1
 
 
+def test_client_with_credentials_info_from_uri() -> None:
+    """Test client creation with credentials info from URI."""
+    with (
+        mock.patch("google.cloud.bigquery.Client.from_service_account_info") as mock_from_info,
+        mock.patch(
+            "meltano_state_backend_bigquery.backend.BigQueryStateStoreManager._ensure_dataset",
+        ),
+        mock.patch(
+            "meltano_state_backend_bigquery.backend.BigQueryStateStoreManager._ensure_tables",
+        ),
+    ):
+        mock_client = mock.Mock()
+        mock_from_info.return_value = mock_client
+
+        credentials_info = {
+            "type": "service_account",
+            "project_id": "test-project-123456",
+            "private_key_id": "private-key-id",
+            "private_key": "-----BEGIN PRIVATE KEY-----\nprivate key content\n-----END PRIVATE KEY-----\n",  # noqa: E501
+            "client_email": "user@test.com",
+            "client_id": "test-client-id",
+            "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+            "token_uri": "https://oauth2.googleapis.com/token",
+            "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+            "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/user%40test-project-123456.iam.gserviceaccount.com",
+            "universe_domain": "googleapis.com",
+        }
+        credentials_base64 = base64.b64encode(json.dumps(credentials_info).encode()).decode()
+
+        manager = BigQueryStateStoreManager(
+            uri=f"bigquery://testproject/testdataset?credentials_base64={credentials_base64}",
+            project="testproject",
+            dataset="testdataset",
+        )
+
+        # Access the client property to trigger creation
+        _ = manager.client
+
+        # Verify credentials info was used
+        mock_from_info.assert_called_once_with(
+            credentials_info,
+            project="testproject",
+        )
+
+
 def test_client_with_credentials_path() -> None:
     """Test client creation with credentials path."""
     with (
@@ -552,6 +599,36 @@ def test_client_with_credentials_path() -> None:
             project="testproject",
             dataset="testdataset",
             credentials_path="/path/to/credentials.json",
+        )
+
+        # Access the client property to trigger creation
+        _ = manager.client
+
+        # Verify credentials path was used
+        mock_from_json.assert_called_once_with(
+            "/path/to/credentials.json",
+            project="testproject",
+        )
+
+
+def test_client_with_credentials_path_from_uri() -> None:
+    """Test client creation with credentials path from URI."""
+    with (
+        mock.patch("google.cloud.bigquery.Client.from_service_account_json") as mock_from_json,
+        mock.patch(
+            "meltano_state_backend_bigquery.backend.BigQueryStateStoreManager._ensure_dataset",
+        ),
+        mock.patch(
+            "meltano_state_backend_bigquery.backend.BigQueryStateStoreManager._ensure_tables",
+        ),
+    ):
+        mock_client = mock.Mock()
+        mock_from_json.return_value = mock_client
+
+        manager = BigQueryStateStoreManager(
+            uri=r"bigquery://testproject/testdataset?credentials_path=%2Fpath%2Fto%2Fcredentials.json",
+            project="testproject",
+            dataset="testdataset",
         )
 
         # Access the client property to trigger creation

@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import base64
 import json
 from contextlib import contextmanager
 from functools import cached_property
 from time import sleep
 from typing import TYPE_CHECKING, Any
-from urllib.parse import urlparse
+from urllib.parse import parse_qsl, urlparse
 
 from google.cloud import bigquery
 from google.cloud.exceptions import NotFound
@@ -94,6 +95,7 @@ class BigQueryStateStoreManager(StateStoreManager):
         super().__init__(**kwargs)
         self.uri = uri
         parsed = urlparse(uri)
+        connection_params = dict(parse_qsl(parsed.query))
 
         # Extract connection details from URI and parameters
         self.project = project or parsed.hostname
@@ -108,8 +110,13 @@ class BigQueryStateStoreManager(StateStoreManager):
             msg = "BigQuery dataset is required"
             raise MissingStateBackendSettingsError(msg)
 
-        self.location = location or "US"
-        self.credentials_path = credentials_path
+        self.location = location or connection_params.get("location") or "US"
+
+        self.credentials_info = (
+            credentials_base64 := connection_params.get("credentials_base64")
+        ) and json.loads(base64.b64decode(credentials_base64))
+
+        self.credentials_path = credentials_path or connection_params.get("credentials_path")
 
         self._ensure_dataset()
         self._ensure_tables()
@@ -122,6 +129,11 @@ class BigQueryStateStoreManager(StateStoreManager):
             A BigQuery client object.
 
         """
+        if self.credentials_info:
+            return bigquery.Client.from_service_account_info(  # type: ignore[no-any-return,no-untyped-call]
+                self.credentials_info,
+                project=self.project,
+            )
         if self.credentials_path:
             return bigquery.Client.from_service_account_json(  # type: ignore[no-any-return,no-untyped-call]
                 self.credentials_path,
