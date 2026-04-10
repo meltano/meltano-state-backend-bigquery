@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import json
+import sys
 from contextlib import contextmanager
 from functools import cached_property
 from time import sleep
@@ -21,6 +22,11 @@ from meltano.core.state_store.base import (
     StateStoreManager,
 )
 
+if sys.version_info >= (3, 12):
+    from typing import override
+else:
+    from typing_extensions import override
+
 if TYPE_CHECKING:
     from collections.abc import Generator, Iterable
 
@@ -33,7 +39,7 @@ BIGQUERY_PROJECT = SettingDefinition(
     name="state_backend.bigquery.project",
     label="BigQuery Project",
     description="BigQuery project ID",
-    kind=SettingKind.STRING,  # ty: ignore[invalid-argument-type]
+    kind=SettingKind.STRING,
     env_specific=True,
 )
 
@@ -41,7 +47,7 @@ BIGQUERY_DATASET = SettingDefinition(
     name="state_backend.bigquery.dataset",
     label="BigQuery Dataset",
     description="BigQuery dataset name",
-    kind=SettingKind.STRING,  # ty: ignore[invalid-argument-type]
+    kind=SettingKind.STRING,
     env_specific=True,
 )
 
@@ -49,7 +55,7 @@ BIGQUERY_LOCATION = SettingDefinition(
     name="state_backend.bigquery.location",
     label="BigQuery Location",
     description="BigQuery dataset location (e.g., US, EU)",
-    kind=SettingKind.STRING,  # ty: ignore[invalid-argument-type]
+    kind=SettingKind.STRING,
     value="US",
     env_specific=True,
 )
@@ -58,7 +64,7 @@ BIGQUERY_CREDENTIALS_PATH = SettingDefinition(
     name="state_backend.bigquery.credentials_path",
     label="BigQuery Credentials Path",
     description="Path to service account JSON key file",
-    kind=SettingKind.STRING,  # ty: ignore[invalid-argument-type]
+    kind=SettingKind.STRING,
     sensitive=True,
     env_specific=True,
 )
@@ -67,9 +73,13 @@ BIGQUERY_CREDENTIALS_PATH = SettingDefinition(
 class BigQueryStateStoreManager(StateStoreManager):
     """State backend for BigQuery."""
 
-    label: str = "BigQuery"
     table_name: str = "meltano_state"
     lock_table_name: str = "meltano_state_locks"
+
+    @property
+    @override
+    def label(self) -> str:
+        return "BigQuery"  # pragma: no cover
 
     def __init__(
         self,
@@ -180,6 +190,7 @@ class BigQueryStateStoreManager(StateStoreManager):
             lock_table = bigquery.Table(lock_table_id, schema=lock_schema)
             self.client.create_table(lock_table)
 
+    @override
     def set(self, state: MeltanoState) -> None:
         """Set the job state for the given state_id.
 
@@ -212,6 +223,7 @@ class BigQueryStateStoreManager(StateStoreManager):
         query_job = self.client.query(query, job_config=job_config)
         query_job.result()
 
+    @override
     def get(self, state_id: str) -> MeltanoState | None:
         """Get the job state for the given state_id.
 
@@ -249,6 +261,7 @@ class BigQueryStateStoreManager(StateStoreManager):
             completed_state=value.get("completed") or {},
         )
 
+    @override
     def delete(self, state_id: str) -> None:
         """Delete state for the given state_id.
 
@@ -270,6 +283,7 @@ class BigQueryStateStoreManager(StateStoreManager):
         query_job = self.client.query(query, job_config=job_config)
         query_job.result()  # Wait for the query to complete
 
+    @override
     def clear_all(self) -> int:
         """Clear all states.
 
@@ -295,6 +309,7 @@ class BigQueryStateStoreManager(StateStoreManager):
 
         return count  # type: ignore[no-any-return]
 
+    @override
     def get_state_ids(self, pattern: str | None = None) -> Iterable[str]:
         """Get all state_ids available in this state store manager.
 
@@ -329,6 +344,7 @@ class BigQueryStateStoreManager(StateStoreManager):
         for row in query_job.result():
             yield row.state_id
 
+    @override
     @contextmanager
     def acquire_lock(
         self,
