@@ -3,7 +3,6 @@ from __future__ import annotations
 import base64
 import json
 import shutil
-from decimal import Decimal
 from typing import TYPE_CHECKING
 from unittest import mock
 
@@ -461,7 +460,7 @@ def test_acquire_lock_retry(
     mock_client.query.side_effect = query_side_effect
 
     # Test lock retry
-    with manager.acquire_lock("test_job", retry_seconds=0.01):  # type: ignore[arg-type]
+    with manager.acquire_lock("test_job", retry_seconds=0.01):  # type: ignore[arg-type] # ty: ignore[invalid-argument-type]
         pass
 
     # Verify it retried: MERGE, SELECT (other's), MERGE, SELECT (ours), DELETE, cleanup
@@ -518,7 +517,7 @@ def test_acquire_lock_max_retries_exceeded(
 
     mock_client.query.side_effect = query_side_effect
 
-    retry_seconds = Decimal("0.01")
+    retry_seconds = 0.01
 
     # Mock sleep
     with (
@@ -527,7 +526,7 @@ def test_acquire_lock_max_retries_exceeded(
             StateIDLockedError,
             match="Could not acquire lock for state_id: test_job",
         ),
-        manager.acquire_lock("test_job", retry_seconds=retry_seconds),  # type: ignore[arg-type]
+        manager.acquire_lock("test_job", retry_seconds=retry_seconds),  # type: ignore[arg-type] # ty: ignore[invalid-argument-type]
     ):
         pass  # pragma: no cover
 

@@ -1087,6 +1087,7 @@ source = { editable = "." }
 dependencies = [
     { name = "google-cloud-bigquery" },
     { name = "meltano" },
+    { name = "typing-extensions", marker = "python_full_version < '3.12'" },
 ]
 
 [package.dev-dependencies]
@@ -1115,6 +1116,7 @@ types = [
 requires-dist = [
     { name = "google-cloud-bigquery", specifier = ">=3.24,<4" },
     { name = "meltano", specifier = ">=3.7" },
+    { name = "typing-extensions", marker = "python_full_version < '3.12'", specifier = ">=4.15.0" },
 ]
 
 [package.metadata.requires-dev]
