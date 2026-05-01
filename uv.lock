@@ -491,7 +491,7 @@ name = "exceptiongroup"
 version = "1.3.1"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "typing-extensions", marker = "python_full_version < '3.13'" },
+    { name = "typing-extensions", marker = "python_full_version < '3.11'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/50/79/66800aadf48771f6b62f7eb014e352e5d06856655206165d775e675a02c9/exceptiongroup-1.3.1.tar.gz", hash = "sha256:8b412432c6055b0b7d14c310000ae93352ed6754f70fa8f7c34141f91c4e3219", size = 30371, upload-time = "2025-11-21T23:01:54.787Z" }
 wheels = [
@@ -784,7 +784,7 @@ name = "importlib-metadata"
 version = "9.0.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
-    { name = "zipp" },
+    { name = "zipp", marker = "python_full_version < '3.13'" },
 ]
 sdist = { url = "https://files.pythonhosted.org/packages/a9/01/15bb152d77b21318514a96f43af312635eb2500c96b55398d020c93d86ea/importlib_metadata-9.0.0.tar.gz", hash = "sha256:a4f57ab599e6a2e3016d7595cfd72eb4661a5106e787a95bcc90c7105b831efc", size = 56405, upload-time = "2026-03-20T06:42:56.999Z" }
 wheels = [
@@ -1044,7 +1044,7 @@ wheels = [
 
 [[package]]
 name = "meltano"
-version = "4.1.2"
+version = "4.2.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "alembic" },
@@ -1076,9 +1076,9 @@ dependencies = [
     { name = "uv" },
     { name = "virtualenv" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/61/4c/fae1c2a4841abcd1b8681cacb152d9b6cebac51e419305fe23c8f29ad306/meltano-4.1.2.tar.gz", hash = "sha256:aa544d525463d14ef84388937b28e7c5f1a4f35617a957cea4c254f77a87b611", size = 12772828, upload-time = "2026-02-03T03:26:25.964Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/70/d2/3467b24d6e6bcd09f32f5eb24e5db7ce2581e9810ea2cd1812099a195e08/meltano-4.2.0.tar.gz", hash = "sha256:c1fa06fdf7b4c29874126d541f8bf0362807675a39598e3759611d67864bb5e4", size = 12780074, upload-time = "2026-04-10T23:40:46.735Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/b6/0d/9d20427b6b5fdeb48233ca500b6237ebde71616b0cbf455726b15812ae93/meltano-4.1.2-py3-none-any.whl", hash = "sha256:ad5230505723a4922b7efbf511bfdabe56854da3d4040b435da5afd91d1b1b5f", size = 399944, upload-time = "2026-02-03T03:26:23.919Z" },
+    { url = "https://files.pythonhosted.org/packages/e3/93/13aa61f6ba2ae7bcd5a216fb0136eee52296b3a307bb5b88e7945b5c7a83/meltano-4.2.0-py3-none-any.whl", hash = "sha256:0729c87fd36014b6cab081f220d31f9844943d39485d464f389fe25086af5ed6", size = 402247, upload-time = "2026-04-10T23:40:44.933Z" },
 ]
 
 [[package]]
