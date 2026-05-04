@@ -1045,7 +1045,7 @@ wheels = [
 
 [[package]]
 name = "meltano"
-version = "4.1.2"
+version = "4.2.0"
 source = { registry = "https://pypi.org/simple" }
 dependencies = [
     { name = "alembic" },
@@ -1077,9 +1077,9 @@ dependencies = [
     { name = "uv" },
     { name = "virtualenv" },
 ]
-sdist = { url = "https://files.pythonhosted.org/packages/61/4c/fae1c2a4841abcd1b8681cacb152d9b6cebac51e419305fe23c8f29ad306/meltano-4.1.2.tar.gz", hash = "sha256:aa544d525463d14ef84388937b28e7c5f1a4f35617a957cea4c254f77a87b611", size = 12772828, upload-time = "2026-02-03T03:26:25.964Z" }
+sdist = { url = "https://files.pythonhosted.org/packages/70/d2/3467b24d6e6bcd09f32f5eb24e5db7ce2581e9810ea2cd1812099a195e08/meltano-4.2.0.tar.gz", hash = "sha256:c1fa06fdf7b4c29874126d541f8bf0362807675a39598e3759611d67864bb5e4", size = 12780074, upload-time = "2026-04-10T23:40:46.735Z" }
 wheels = [
-    { url = "https://files.pythonhosted.org/packages/b6/0d/9d20427b6b5fdeb48233ca500b6237ebde71616b0cbf455726b15812ae93/meltano-4.1.2-py3-none-any.whl", hash = "sha256:ad5230505723a4922b7efbf511bfdabe56854da3d4040b435da5afd91d1b1b5f", size = 399944, upload-time = "2026-02-03T03:26:23.919Z" },
+    { url = "https://files.pythonhosted.org/packages/e3/93/13aa61f6ba2ae7bcd5a216fb0136eee52296b3a307bb5b88e7945b5c7a83/meltano-4.2.0-py3-none-any.whl", hash = "sha256:0729c87fd36014b6cab081f220d31f9844943d39485d464f389fe25086af5ed6", size = 402247, upload-time = "2026-04-10T23:40:44.933Z" },
 ]
 
 [[package]]

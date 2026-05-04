@@ -350,7 +350,7 @@ class BigQueryStateStoreManager(StateStoreManager):
         self,
         state_id: str,
         *,
-        retry_seconds: int = 1,
+        retry_seconds: float = 1.0,
     ) -> Generator[None, None, None]:
         """Acquire a lock for the given job's state.
 
@@ -368,8 +368,8 @@ class BigQueryStateStoreManager(StateStoreManager):
         import uuid
 
         lock_id = str(uuid.uuid4())
-        max_seconds = 30
-        seconds_waited = 0
+        max_seconds = 30.0
+        seconds_waited = 0.0
 
         while seconds_waited < max_seconds:  # pragma: no branch
             # MERGE will only insert if no row exists for this state_id
