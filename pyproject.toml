@@ -185,11 +185,13 @@ env_list = [
 ]
 
 [tool.tox.env_run_base]
+description = "run unit tests on Python {py_dot_ver}"
 runner = "uv-venv-lock-runner"
 dependency_groups = [ "tests" ]
 commands = [ [ "coverage", "run", "-m", "pytest", { replace = "posargs", default = [ "tests" ], extend = true } ] ]
 
 [tool.tox.env.coverage]
+description = "compute test coverage"
 depends = [
   "3.10",
   "3.11",
@@ -205,6 +207,7 @@ commands = [
 ]
 
 [tool.tox.env.lint]
+description = "lint and format Python code"
 dependency_groups = [ "lint" ]
 skip_install = true
 commands = [
@@ -213,6 +216,7 @@ commands = [
 ]
 
 [tool.tox.env.types]
+description = "static type checking"
 dependency_groups = [ "tests", "types" ]
 commands = [
   [

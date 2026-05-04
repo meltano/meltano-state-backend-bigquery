@@ -460,7 +460,7 @@ def test_acquire_lock_retry(
     mock_client.query.side_effect = query_side_effect
 
     # Test lock retry
-    with manager.acquire_lock("test_job", retry_seconds=0.01):  # type: ignore[arg-type] # ty: ignore[invalid-argument-type]
+    with manager.acquire_lock("test_job", retry_seconds=0.01):
         pass
 
     # Verify it retried: MERGE, SELECT (other's), MERGE, SELECT (ours), DELETE, cleanup
@@ -526,7 +526,7 @@ def test_acquire_lock_max_retries_exceeded(
             StateIDLockedError,
             match="Could not acquire lock for state_id: test_job",
         ),
-        manager.acquire_lock("test_job", retry_seconds=retry_seconds),  # type: ignore[arg-type] # ty: ignore[invalid-argument-type]
+        manager.acquire_lock("test_job", retry_seconds=retry_seconds),
     ):
         pass  # pragma: no cover
 
