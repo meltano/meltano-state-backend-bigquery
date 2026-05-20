@@ -29,7 +29,7 @@ def project(tmp_path: Path) -> Project:
     shutil.copytree(
         "fixtures/project",
         path,
-        ignore=shutil.ignore_patterns(".meltano/**"),
+        ignore=shutil.ignore_patterns(".meltano"),
     )
     return Project.find(path.resolve())  # type: ignore[no-any-return]
 
