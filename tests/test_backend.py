@@ -3,6 +3,7 @@ from __future__ import annotations
 import base64
 import json
 import shutil
+from importlib.metadata import version
 from typing import TYPE_CHECKING
 from unittest import mock
 
@@ -13,6 +14,7 @@ from meltano.core.state_store.base import (
     MissingStateBackendSettingsError,
     StateIDLockedError,
 )
+from packaging.version import Version
 
 from meltano_state_backend_bigquery.backend import BigQueryStateStoreManager
 
@@ -116,8 +118,7 @@ def subject(
             project="testproject",
             dataset="testdataset",
         )
-        # Replace the cached client with our mock
-        manager.__dict__["client"] = mock_client
+        manager.client = mock_client
         return manager, mock_client
 
 
@@ -783,3 +784,33 @@ def test_ensure_tables_creates_when_not_found() -> None:
         assert mock_table_class.call_count == 2
         assert mock_client.create_table.call_count == 2
         assert manager.table_name == "meltano_state"
+
+
+@pytest.mark.xfail(
+    condition=Version(version("meltano")) < Version("4.2.0"),
+    reason="Requires Meltano 4.2+ for context manager support on StateStoreManager",
+)
+def test_context_manager(
+    subject: tuple[BigQueryStateStoreManager, mock.Mock],
+) -> None:
+    """Test that close() closes the client, and is a no-op when already closed."""
+    manager, mock_client = subject
+
+    with manager:
+        assert manager._client is not None
+
+    mock_client.close.assert_called_once()
+
+    manager.close()  # no-op: _client is already None
+    mock_client.close.assert_called_once()  # still only called once
+    assert manager._client is None
+
+
+def test_close_without_client(
+    subject: tuple[BigQueryStateStoreManager, mock.Mock],
+) -> None:
+    """close() is a no-op when the client has never been opened."""
+    manager, _ = subject
+    manager._client = None
+    manager.close()  # should not raise
+    assert manager._client is None
