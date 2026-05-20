@@ -6,7 +6,6 @@ import base64
 import json
 import sys
 from contextlib import contextmanager
-from functools import cached_property
 from time import sleep
 from typing import TYPE_CHECKING, Any
 from urllib.parse import parse_qsl, urlparse
@@ -128,10 +127,11 @@ class BigQueryStateStoreManager(StateStoreManager):
 
         self.credentials_path = credentials_path or connection_params.get("credentials_path")
 
+        self._client: bigquery.Client | None = None
         self._ensure_dataset()
         self._ensure_tables()
 
-    @cached_property
+    @property
     def client(self) -> bigquery.Client:
         """Get a BigQuery client.
 
@@ -139,17 +139,34 @@ class BigQueryStateStoreManager(StateStoreManager):
             A BigQuery client object.
 
         """
+        if self._client is not None:
+            return self._client
+
         if self.credentials_info:
-            return bigquery.Client.from_service_account_info(  # type: ignore[no-any-return,no-untyped-call]
+            self._client = bigquery.Client.from_service_account_info(  # type: ignore[no-untyped-call]
                 self.credentials_info,
                 project=self.project,
             )
-        if self.credentials_path:
-            return bigquery.Client.from_service_account_json(  # type: ignore[no-any-return,no-untyped-call]
+        elif self.credentials_path:
+            self._client = bigquery.Client.from_service_account_json(  # type: ignore[no-untyped-call]
                 self.credentials_path,
                 project=self.project,
             )
-        return bigquery.Client(project=self.project)
+        else:
+            self._client = bigquery.Client(project=self.project)
+        return self._client
+
+    @client.setter
+    def client(self, value: bigquery.Client) -> None:
+        """Set the BigQuery client (for testing/mocking)."""
+        self._client = value
+
+    @override
+    def close(self) -> None:
+        """Close the state store manager and release any resources."""
+        if self._client is not None:
+            self._client.close()  # type: ignore[no-untyped-call]
+            self._client = None
 
     def _ensure_dataset(self) -> None:
         """Ensure the dataset exists."""
