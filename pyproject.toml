@@ -156,6 +156,7 @@ addopts = [
 filterwarnings = [
   "error",
   "once:You are using a Python version .* which Google will stop supporting:FutureWarning",
+  "once:You are using a non-supported Python version .* Google will not post any further updates:FutureWarning",
 ]
 log_level = "INFO"
 minversion = "9"
